@@ -31,6 +31,9 @@ export function useShellRuntime({
   const isPlainShellRef = useRef(isPlainShell);
   const onProcessCompleteRef = useRef(onProcessComplete);
   const authUrlRef = useRef('');
+  const lastProjectPathRef = useRef<string | null>(
+    selectedProject?.fullPath || selectedProject?.path || null,
+  );
   const lastSessionIdRef = useRef<string | null>(selectedSession?.id ?? null);
 
   // Keep mutable values in refs so websocket handlers always read current data.
@@ -108,6 +111,7 @@ export function useShellRuntime({
   const { isConnected, isConnecting, connectToShell, disconnectFromShell } = useShellConnection({
     wsRef,
     terminalRef,
+    terminalContainerRef,
     fitAddonRef,
     selectedProjectRef,
     selectedSessionRef,
@@ -131,23 +135,44 @@ export function useShellRuntime({
     disposeTerminal();
   }, [disconnectFromShell, disposeTerminal, isRestarting]);
 
+  // Single (project, session) reconciliation: one disconnect per navigation,
+  // not two effects racing ~30 ms apart and producing paired server inits.
   useEffect(() => {
-    if (selectedProject) {
+    const projectPath = selectedProject?.fullPath || selectedProject?.path || null;
+    const sessionId = selectedSession?.id ?? null;
+
+    if (!selectedProject) {
+      if (lastProjectPathRef.current !== null) {
+        disconnectFromShell();
+        disposeTerminal();
+      }
+      lastProjectPathRef.current = null;
+      lastSessionIdRef.current = null;
       return;
     }
 
-    disconnectFromShell();
-    disposeTerminal();
-  }, [disconnectFromShell, disposeTerminal, selectedProject]);
+    if (!isInitialized) {
+      lastProjectPathRef.current = projectPath;
+      lastSessionIdRef.current = sessionId;
+      return;
+    }
 
-  useEffect(() => {
-    const currentSessionId = selectedSession?.id ?? null;
-    if (lastSessionIdRef.current !== currentSessionId && isInitialized) {
+    const projectChanged = lastProjectPathRef.current !== projectPath;
+    const sessionChanged = lastSessionIdRef.current !== sessionId;
+
+    if (projectChanged || sessionChanged) {
       disconnectFromShell();
     }
 
-    lastSessionIdRef.current = currentSessionId;
-  }, [disconnectFromShell, isInitialized, selectedSession?.id]);
+    lastProjectPathRef.current = projectPath;
+    lastSessionIdRef.current = sessionId;
+  }, [
+    disconnectFromShell,
+    disposeTerminal,
+    isInitialized,
+    selectedProject,
+    selectedSession?.id,
+  ]);
 
   return {
     terminalContainerRef,

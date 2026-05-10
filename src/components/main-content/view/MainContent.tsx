@@ -156,16 +156,16 @@ function MainContent({
             </div>
           )}
 
-          {activeTab === 'shell' && (
-            <div className="h-full w-full overflow-hidden">
-              <StandaloneShell
-                project={selectedProject}
-                session={selectedSession}
-                showHeader={false}
-                isActive={activeTab === 'shell'}
-              />
-            </div>
-          )}
+          <div
+            className={`h-full w-full overflow-hidden ${activeTab === 'shell' ? 'block' : 'hidden'}`}
+          >
+            <StandaloneShell
+              project={selectedProject}
+              session={selectedSession}
+              showHeader={false}
+              isActive={activeTab === 'shell'}
+            />
+          </div>
 
           {activeTab === 'git' && (
             <div className="h-full overflow-hidden">

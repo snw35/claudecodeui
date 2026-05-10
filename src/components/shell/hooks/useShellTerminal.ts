@@ -198,7 +198,13 @@ export function useShellTerminal({
     window.setTimeout(() => {
       const currentFitAddon = fitAddonRef.current;
       const currentTerminal = terminalRef.current;
-      if (!currentFitAddon || !currentTerminal) {
+      const currentContainer = terminalContainerRef.current;
+      if (!currentFitAddon || !currentTerminal || !currentContainer) {
+        return;
+      }
+
+      // Skip fit while container is hidden; see resize observer below.
+      if (currentContainer.clientWidth === 0 || currentContainer.clientHeight === 0) {
         return;
       }
 
@@ -227,7 +233,18 @@ export function useShellTerminal({
       resizeTimeoutRef.current = window.setTimeout(() => {
         const currentFitAddon = fitAddonRef.current;
         const currentTerminal = terminalRef.current;
-        if (!currentFitAddon || !currentTerminal) {
+        const currentContainer = terminalContainerRef.current;
+        if (!currentFitAddon || !currentTerminal || !currentContainer) {
+          return;
+        }
+
+        // Skip fit while the tab is hidden (MainContent's block/hidden
+        // pattern leaves the container at 0×0 instead of unmounting).
+        // fit() would collapse cols/rows and ship a tiny SIGWINCH to
+        // the PTY, corrupting claude's render until the next visible
+        // refit. The display:none → block transition triggers another
+        // ResizeObserver tick that refits cleanly.
+        if (currentContainer.clientWidth === 0 || currentContainer.clientHeight === 0) {
           return;
         }
 

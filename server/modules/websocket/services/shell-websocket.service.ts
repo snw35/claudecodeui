@@ -28,6 +28,8 @@ type PtySessionEntry = {
   timeoutId: NodeJS.Timeout | null;
   projectPath: string;
   sessionId: string | null;
+  // Current map key; mutated by `handleSessionFileEvent` on re-key.
+  key: string;
 };
 
 const ptySessionsMap = new Map<string, PtySessionEntry>();
@@ -94,10 +96,19 @@ function handleSessionFileEvent(payload: SessionFileEventPayload): void {
   const newKey = `${candidateEntry.projectPath}_${payload.sessionId}`;
   ptySessionsMap.delete(candidateKey);
   candidateEntry.sessionId = payload.sessionId;
+  candidateEntry.key = newKey;
   ptySessionsMap.set(newKey, candidateEntry);
 }
 
-sessionFileEvents.on('session-file', handleSessionFileEvent);
+// Deferred past module evaluation: shell-websocket and sessions-watcher
+// participate in an import cycle (shell-websocket → providers/index →
+// sessions-watcher → websocket/index → websocket-server → shell-websocket),
+// so subscribing synchronously at top-level can hit TDZ on `sessionFileEvents`.
+// queueMicrotask runs after all module top-level bodies have finished, by
+// which point the EventEmitter binding is fully initialized.
+queueMicrotask(() => {
+  sessionFileEvents.on('session-file', handleSessionFileEvent);
+});
 
 type ShellWebSocketDependencies = {
   getSessionById: (sessionId: string) => { cliSessionId?: string } | null | undefined;
@@ -222,7 +233,12 @@ export function handleShellConnection(
   console.log('[INFO] Shell websocket connected');
 
   let shellProcess: IPty | null = null;
-  let ptySessionKey: string | null = null;
+  // Connection handlers close over the entry reference, never the map key.
+  // The session-file watcher may re-key the entry (e.g. `_default` →
+  // `_<UUID>`) while this connection is live. Going through the map by
+  // key would miss after re-key; going through `entry` directly is
+  // immune. `entry.key` carries the current map key for cleanup paths.
+  let entry: PtySessionEntry | null = null;
   let urlDetectionBuffer = '';
   const announcedAuthUrls = new Set<string>();
 
@@ -257,24 +273,38 @@ export function handleShellConnection(
           isPlainShell && initialCommand
             ? `_cmd_${Buffer.from(initialCommand).toString('base64').slice(0, 16)}`
             : '';
-        ptySessionKey = `${projectPath}_${sessionId ?? 'default'}${commandSuffix}`;
+        const lookupKey = `${projectPath}_${sessionId ?? 'default'}${commandSuffix}`;
 
         if (isLoginCommand) {
-          const oldSession = ptySessionsMap.get(ptySessionKey);
+          const oldSession = ptySessionsMap.get(lookupKey);
           if (oldSession) {
             if (oldSession.timeoutId) {
               clearTimeout(oldSession.timeoutId);
             }
             oldSession.pty.kill();
-            ptySessionsMap.delete(ptySessionKey);
+            ptySessionsMap.delete(oldSession.key);
           }
         }
 
-        const existingSession = isLoginCommand ? null : ptySessionsMap.get(ptySessionKey);
+        const existingSession = isLoginCommand ? null : ptySessionsMap.get(lookupKey);
         if (existingSession) {
+          entry = existingSession;
           shellProcess = existingSession.pty;
           if (existingSession.timeoutId) {
             clearTimeout(existingSession.timeoutId);
+            existingSession.timeoutId = null;
+          }
+
+          // The previous ws (if any) is being abandoned — the new connection
+          // takes over this PTY slot. Close the old socket so the frontend's
+          // close-handler runs and doesn't keep a half-dead connection alive.
+          const previousWs = existingSession.ws;
+          if (previousWs && previousWs !== ws && previousWs.readyState === WebSocket.OPEN) {
+            try {
+              previousWs.close();
+            } catch {
+              // best effort
+            }
           }
 
           ws.send(
@@ -336,21 +366,20 @@ export function handleShellConnection(
           },
         });
 
-        ptySessionsMap.set(ptySessionKey, {
+        const newEntry: PtySessionEntry = {
           pty: shellProcess,
           ws,
           buffer: [],
           timeoutId: null,
           projectPath,
           sessionId,
-        });
+          key: lookupKey,
+        };
+        ptySessionsMap.set(lookupKey, newEntry);
+        entry = newEntry;
 
         shellProcess.onData((chunk) => {
-          if (!ptySessionKey) {
-            return;
-          }
-
-          const session = ptySessionsMap.get(ptySessionKey);
+          const session = entry;
           if (!session) {
             return;
           }
@@ -422,12 +451,12 @@ export function handleShellConnection(
         });
 
         shellProcess.onExit((exitCode) => {
-          if (!ptySessionKey) {
+          const session = entry;
+          if (!session) {
             return;
           }
 
-          const session = ptySessionsMap.get(ptySessionKey);
-          if (session && session.ws && session.ws.readyState === WebSocket.OPEN) {
+          if (session.ws && session.ws.readyState === WebSocket.OPEN) {
             session.ws.send(
               JSON.stringify({
                 type: 'output',
@@ -438,12 +467,16 @@ export function handleShellConnection(
             );
           }
 
-          if (session?.timeoutId) {
+          if (session.timeoutId) {
             clearTimeout(session.timeoutId);
+            session.timeoutId = null;
           }
 
-          ptySessionsMap.delete(ptySessionKey);
+          // `session.key` is current — the watcher updates it on re-key,
+          // so we always delete the right map entry.
+          ptySessionsMap.delete(session.key);
           shellProcess = null;
+          entry = null;
         });
 
         let welcomeMsg = `\x1b[36mStarting terminal in: ${projectPath}\x1b[0m\r\n`;
@@ -497,19 +530,25 @@ export function handleShellConnection(
   });
 
   ws.on('close', () => {
-    if (!ptySessionKey) {
-      return;
-    }
-
-    const session = ptySessionsMap.get(ptySessionKey);
+    const session = entry;
     if (!session) {
       return;
     }
 
+    // A newer connection may have already taken over this PTY entry by
+    // assigning its own ws — in that case our close should not tear the
+    // entry down or strand the new connection without an output sink.
+    if (session.ws !== ws) {
+      return;
+    }
+
     session.ws = null;
+    if (session.timeoutId) {
+      clearTimeout(session.timeoutId);
+    }
     session.timeoutId = setTimeout(() => {
       session.pty.kill();
-      ptySessionsMap.delete(ptySessionKey as string);
+      ptySessionsMap.delete(session.key);
     }, PTY_SESSION_TIMEOUT);
   });
 

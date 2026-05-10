@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { MutableRefObject } from 'react';
+import type { MutableRefObject, RefObject } from 'react';
 import type { FitAddon } from '@xterm/addon-fit';
 import type { Terminal } from '@xterm/xterm';
 import type { Project, ProjectSession } from '../../../types/app';
@@ -13,6 +13,7 @@ const PROCESS_EXIT_REGEX = /Process exited with code (\d+)/;
 type UseShellConnectionOptions = {
   wsRef: MutableRefObject<WebSocket | null>;
   terminalRef: MutableRefObject<Terminal | null>;
+  terminalContainerRef: RefObject<HTMLDivElement>;
   fitAddonRef: MutableRefObject<FitAddon | null>;
   selectedProjectRef: MutableRefObject<Project | null | undefined>;
   selectedSessionRef: MutableRefObject<ProjectSession | null | undefined>;
@@ -38,6 +39,7 @@ type UseShellConnectionResult = {
 export function useShellConnection({
   wsRef,
   terminalRef,
+  terminalContainerRef,
   fitAddonRef,
   selectedProjectRef,
   selectedSessionRef,
@@ -136,11 +138,19 @@ export function useShellConnection({
             const currentTerminal = terminalRef.current;
             const currentFitAddon = fitAddonRef.current;
             const currentProject = selectedProjectRef.current;
+            const currentContainer = terminalContainerRef.current;
             if (!currentTerminal || !currentFitAddon || !currentProject) {
               return;
             }
 
-            currentFitAddon.fit();
+            // Skip fit while container is hidden; see useShellTerminal.
+            if (
+              currentContainer &&
+              currentContainer.clientWidth > 0 &&
+              currentContainer.clientHeight > 0
+            ) {
+              currentFitAddon.fit();
+            }
 
             sendSocketMessage(socket, {
               type: 'init',
@@ -162,6 +172,15 @@ export function useShellConnection({
         };
 
         socket.onclose = () => {
+          // Only the *current* socket may reset connection state. A stale
+          // socket firing onclose after it's been superseded (e.g. server
+          // closed it because a newer ws took over the PTY entry) would
+          // otherwise flip isConnected/isConnecting back to false and
+          // re-trigger the autoConnect effect — producing an unbounded
+          // disconnect/reconnect cycle.
+          if (wsRef.current !== socket) {
+            return;
+          }
           setIsConnected(false);
           setIsConnecting(false);
           connectingRef.current = false;
@@ -169,6 +188,9 @@ export function useShellConnection({
         };
 
         socket.onerror = () => {
+          if (wsRef.current !== socket) {
+            return;
+          }
           setIsConnected(false);
           setIsConnecting(false);
           connectingRef.current = false;
