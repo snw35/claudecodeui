@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 import { promises as fsPromises } from 'node:fs';
@@ -50,6 +51,22 @@ const PROJECTS_UPDATE_DEBOUNCE_MS = 500;
 const PROJECTS_UPDATE_MAX_WAIT_MS = 2_000;
 
 const watchers: FSWatcher[] = [];
+
+/**
+ * Notifies subscribers when the filesystem watcher detects a session
+ * transcript file change. Used by `shell-websocket.service.ts` to promote
+ * `_default`-keyed PTY entries to their newly-assigned UUID once claude
+ * writes the transcript file.
+ */
+export type SessionFileEventPayload = {
+  provider: LLMProvider;
+  eventType: WatcherEventType;
+  filePath: string;
+  sessionId: string;
+};
+
+export const sessionFileEvents = new EventEmitter();
+sessionFileEvents.setMaxListeners(50);
 
 type PendingWatcherUpdate = {
   providers: Set<LLMProvider>;
@@ -201,6 +218,15 @@ async function onUpdate(
       sessionId: result.sessionId,
     });
     queuePendingWatcherUpdate(eventType, provider, result.sessionId);
+
+    if (result.sessionId) {
+      sessionFileEvents.emit('session-file', {
+        provider,
+        eventType,
+        filePath,
+        sessionId: result.sessionId,
+      } satisfies SessionFileEventPayload);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Session watcher sync failed for provider "${provider}"`, {

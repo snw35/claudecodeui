@@ -5,6 +5,7 @@ import path from 'node:path';
 import pty, { type IPty } from 'node-pty';
 import { WebSocket, type RawData } from 'ws';
 
+import { sessionFileEvents, type SessionFileEventPayload } from '@/modules/providers/index.js';
 import { parseIncomingJsonObject } from '@/shared/utils.js';
 
 type ShellIncomingMessage = {
@@ -32,6 +33,71 @@ type PtySessionEntry = {
 const ptySessionsMap = new Map<string, PtySessionEntry>();
 const PTY_SESSION_TIMEOUT = 30 * 60 * 1000;
 const SHELL_URL_PARSE_BUFFER_LIMIT = 32768;
+const CLAUDE_PROJECT_NAME_PATTERN = /[^a-zA-Z0-9-]/g;
+
+/**
+ * A new claude session is initially keyed `<projectPath>_default` because
+ * no UUID is known at init time. When claude writes the transcript file
+ * `<UUID>.jsonl`, the central session watcher fires this event. Re-key the
+ * project's `_default` PTY entry to the UUID-keyed slot so a later click
+ * on that session in the sidebar reattaches instead of spawning a fresh
+ * `--resume` wrapper (which would orphan the original PTY along with any
+ * in-process agent state it owns).
+ *
+ * Disambiguation is conservative: if a project has more than one
+ * `_default` PTY (the precondition fixed by Bug B in a later patch), we
+ * refuse rather than risk attaching the wrong session.
+ */
+function handleSessionFileEvent(payload: SessionFileEventPayload): void {
+  if (payload.provider !== 'claude' || payload.eventType !== 'add' || !payload.sessionId) {
+    return;
+  }
+
+  const transcriptDir = path.basename(path.dirname(payload.filePath));
+
+  let candidateKey: string | null = null;
+  let candidateEntry: PtySessionEntry | null = null;
+  let candidateCount = 0;
+
+  for (const [key, entry] of ptySessionsMap) {
+    if (entry.sessionId !== null) {
+      continue;
+    }
+    const encodedProject = entry.projectPath.replace(CLAUDE_PROJECT_NAME_PATTERN, '-');
+    if (encodedProject !== transcriptDir) {
+      continue;
+    }
+    candidateCount += 1;
+    candidateKey = key;
+    candidateEntry = entry;
+  }
+
+  if (candidateCount !== 1 || !candidateKey || !candidateEntry) {
+    if (candidateCount > 1) {
+      console.warn(
+        '[shell-websocket] Refusing to promote _default PTY: multiple candidates for project',
+        { transcriptDir, sessionId: payload.sessionId, candidateCount }
+      );
+    }
+    return;
+  }
+
+  const expectedDefaultPrefix = `${candidateEntry.projectPath}_default`;
+  if (!candidateKey.startsWith(expectedDefaultPrefix)) {
+    return;
+  }
+  const commandSuffix = candidateKey.slice(expectedDefaultPrefix.length);
+  if (commandSuffix !== '') {
+    return;
+  }
+
+  const newKey = `${candidateEntry.projectPath}_${payload.sessionId}`;
+  ptySessionsMap.delete(candidateKey);
+  candidateEntry.sessionId = payload.sessionId;
+  ptySessionsMap.set(newKey, candidateEntry);
+}
+
+sessionFileEvents.on('session-file', handleSessionFileEvent);
 
 type ShellWebSocketDependencies = {
   getSessionById: (sessionId: string) => { cliSessionId?: string } | null | undefined;
