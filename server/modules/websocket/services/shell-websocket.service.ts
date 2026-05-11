@@ -33,7 +33,21 @@ type PtySessionEntry = {
 };
 
 const ptySessionsMap = new Map<string, PtySessionEntry>();
-const PTY_SESSION_TIMEOUT = 30 * 60 * 1000;
+const DEFAULT_PTY_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const PTY_SESSION_TIMEOUT = (() => {
+  const raw = process.env.PTY_SESSION_TIMEOUT_MS;
+  if (!raw) {
+    return DEFAULT_PTY_SESSION_TIMEOUT_MS;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.warn(
+      `[shell-websocket] Ignoring invalid PTY_SESSION_TIMEOUT_MS=${raw}; using default ${DEFAULT_PTY_SESSION_TIMEOUT_MS}ms`,
+    );
+    return DEFAULT_PTY_SESSION_TIMEOUT_MS;
+  }
+  return parsed;
+})();
 const SHELL_URL_PARSE_BUFFER_LIMIT = 32768;
 const CLAUDE_PROJECT_NAME_PATTERN = /[^a-zA-Z0-9-]/g;
 
