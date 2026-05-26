@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -25,6 +26,9 @@ type PtySessionEntry = {
   pty: IPty;
   ws: WebSocket | null;
   buffer: string[];
+  bufferBytes: number;
+  droppedBytes: number;
+  droppedChunks: number;
   timeoutId: NodeJS.Timeout | null;
   projectPath: string;
   sessionId: string | null;
@@ -49,6 +53,8 @@ const PTY_SESSION_TIMEOUT = (() => {
   return parsed;
 })();
 const SHELL_URL_PARSE_BUFFER_LIMIT = 32768;
+const MAX_REPLAY_BUFFER_CHUNKS = 5000;
+const MAX_REPLAY_BUFFER_BYTES = 2 * 1024 * 1024;
 const CLAUDE_PROJECT_NAME_PATTERN = /[^a-zA-Z0-9-]/g;
 
 /**
@@ -103,7 +109,9 @@ function handleSessionFileEvent(payload: SessionFileEventPayload): void {
     return;
   }
   const commandSuffix = candidateKey.slice(expectedDefaultPrefix.length);
-  if (commandSuffix !== '') {
+  // Allow: plain `_default` (commandSuffix === '') or a transient `_new_<uuid>` suffix.
+  // Reject: plain-shell `_cmd_<hash>` entries — those are never agent sessions.
+  if (commandSuffix !== '' && !commandSuffix.startsWith('_new_')) {
     return;
   }
 
@@ -283,11 +291,20 @@ export function handleShellConnection(
             initialCommand.includes('cursor-agent login') ||
             initialCommand.includes('auth login'));
 
+        // SHA-256 content hash gives each distinct plain-shell command its own session slot
+        // (32 hex chars = 128 bits; collision-free in practice). Replaces the 16-char base64
+        // prefix from d70646b which collided on commands sharing ~12 opening bytes.
         const commandSuffix =
           isPlainShell && initialCommand
-            ? `_cmd_${Buffer.from(initialCommand).toString('base64').slice(0, 16)}`
+            ? `_cmd_${createHash('sha256').update(initialCommand).digest('hex').slice(0, 32)}`
             : '';
-        const lookupKey = `${projectPath}_${sessionId ?? 'default'}${commandSuffix}`;
+        // New agent sessions (no prior sessionId) get a transient UUID suffix so two
+        // simultaneous "new session" inits for the same project never collide on `_default`.
+        // The chokidar re-key path recognises `_new_` suffixes and promotes the entry to the
+        // real UUID once the transcript JSONL appears (see `handleSessionFileEvent`).
+        const newAgentSuffix =
+          !isPlainShell && !hasSession && !sessionId ? `_new_${randomUUID()}` : '';
+        const lookupKey = `${projectPath}_${sessionId ?? 'default'}${commandSuffix}${newAgentSuffix}`;
 
         if (isLoginCommand) {
           const oldSession = ptySessionsMap.get(lookupKey);
@@ -327,6 +344,17 @@ export function handleShellConnection(
               data: '\x1b[36m[Reconnected to existing session]\x1b[0m\r\n',
             })
           );
+
+          if (existingSession.droppedChunks > 0) {
+            ws.send(
+              JSON.stringify({
+                type: 'output',
+                data: `\r\n[output truncated: ${existingSession.droppedBytes} bytes / ${existingSession.droppedChunks} chunks dropped from scrollback]\r\n`,
+              })
+            );
+            existingSession.droppedBytes = 0;
+            existingSession.droppedChunks = 0;
+          }
 
           if (existingSession.buffer.length > 0) {
             existingSession.buffer.forEach((bufferedData) => {
@@ -384,6 +412,9 @@ export function handleShellConnection(
           pty: shellProcess,
           ws,
           buffer: [],
+          bufferBytes: 0,
+          droppedBytes: 0,
+          droppedChunks: 0,
           timeoutId: null,
           projectPath,
           sessionId,
@@ -398,11 +429,16 @@ export function handleShellConnection(
             return;
           }
 
-          if (session.buffer.length < 5000) {
-            session.buffer.push(chunk);
-          } else {
-            session.buffer.shift();
-            session.buffer.push(chunk);
+          session.buffer.push(chunk);
+          session.bufferBytes += chunk.length;
+          while (
+            session.buffer.length > MAX_REPLAY_BUFFER_CHUNKS ||
+            session.bufferBytes > MAX_REPLAY_BUFFER_BYTES
+          ) {
+            const dropped = session.buffer.shift()!;
+            session.bufferBytes -= dropped.length;
+            session.droppedBytes += dropped.length;
+            session.droppedChunks += 1;
           }
 
           if (session.ws && session.ws.readyState === WebSocket.OPEN) {
