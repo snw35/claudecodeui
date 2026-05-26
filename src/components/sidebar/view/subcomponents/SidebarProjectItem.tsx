@@ -108,10 +108,6 @@ export default function SidebarProjectItem({
   };
 
   const selectAndToggleProject = () => {
-    if (selectedProject?.projectId !== project.projectId) {
-      onProjectSelect(project);
-    }
-
     toggleProject();
   };
 

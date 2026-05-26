@@ -608,6 +608,15 @@ export function useProjectsState({
 
   const handleSessionSelect = useCallback(
     (session: ProjectSession) => {
+      const sessionProjectId = session.__projectId;
+
+      if (sessionProjectId && selectedProject?.projectId !== sessionProjectId) {
+        const owningProject = projects.find((p) => p.projectId === sessionProjectId);
+        if (owningProject) {
+          setSelectedProject(owningProject);
+        }
+      }
+
       setSelectedSession(session);
 
       if (activeTab === 'tasks' || activeTab === 'preview') {
@@ -624,17 +633,14 @@ export function useProjectsState({
         // picked from the sidebar (see useSidebarController); compare against
         // the current selection's `projectId` so we know whether to collapse
         // the sidebar after navigation.
-        const sessionProjectId = session.__projectId;
-        const currentProjectId = selectedProject?.projectId;
-
-        if (sessionProjectId !== currentProjectId) {
+        if (sessionProjectId !== selectedProject?.projectId) {
           setSidebarOpen(false);
         }
       }
 
       navigate(`/session/${session.id}`);
     },
-    [activeTab, isMobile, navigate, selectedProject?.projectId],
+    [activeTab, isMobile, navigate, projects, selectedProject?.projectId],
   );
 
   const handleNewSession = useCallback(
