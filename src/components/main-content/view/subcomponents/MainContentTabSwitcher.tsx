@@ -5,6 +5,7 @@ import { Tooltip, PillBar, Pill } from '../../../../shared/view/ui';
 import type { AppTab } from '../../../../types/app';
 import { usePlugins } from '../../../../contexts/PluginsContext';
 import PluginIcon from '../../../plugins/view/PluginIcon';
+import { HIDE_CHAT_TAB } from '../../../../constants/config';
 
 type MainContentTabSwitcherProps = {
   activeTab: AppTab;
@@ -51,7 +52,9 @@ export default function MainContentTabSwitcher({
   const { t } = useTranslation();
   const { plugins } = usePlugins();
 
-  const builtInTabs: BuiltInTab[] = shouldShowTasksTab ? [...BASE_TABS, TASKS_TAB] : BASE_TABS;
+  const builtInTabs: BuiltInTab[] = (shouldShowTasksTab ? [...BASE_TABS, TASKS_TAB] : BASE_TABS).filter(
+    (tab) => !HIDE_CHAT_TAB || tab.id !== 'chat',
+  );
 
   const pluginTabs: PluginTab[] = plugins
     .filter((p) => p.enabled)

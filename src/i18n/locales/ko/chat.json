@@ -219,7 +219,12 @@
     "resumeSession": "세션 재개: {{displayName}}...",
     "runCommand": "{{projectName}}에서 {{command}} 실행",
     "startCli": "{{projectName}}에서 Claude CLI 시작",
-    "defaultCommand": "명령어"
+    "defaultCommand": "명령어",
+    "takenOver": {
+      "message": "다른 기기에서 세션이 열렸습니다. 에이전트는 그쪽에서 계속 실행 중입니다.",
+      "reattach": "여기서 재연결",
+      "note": "세션이 이동한 이후의 출력은 재생되지 않습니다."
+    }
   },
   "claudeStatus": {
     "actions": {

@@ -210,7 +210,12 @@
     "resumeSession": "セッションを再開: {{displayName}}...",
     "runCommand": "{{projectName}}で{{command}}を実行",
     "startCli": "{{projectName}}でClaude CLIを起動しています",
-    "defaultCommand": "コマンド"
+    "defaultCommand": "コマンド",
+    "takenOver": {
+      "message": "別のデバイスでセッションが開かれました。エージェントはそちらで引き続き実行されています。",
+      "reattach": "ここで再接続",
+      "note": "セッションが移行してからの出力は再生されません。"
+    }
   },
   "claudeStatus": {
     "actions": {

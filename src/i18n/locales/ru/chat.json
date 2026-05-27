@@ -237,7 +237,12 @@
     "resumeSession": "Возобновить сеанс: {{displayName}}...",
     "runCommand": "Выполнить {{command}} в {{projectName}}",
     "startCli": "Запуск Claude CLI в {{projectName}}",
-    "defaultCommand": "команда"
+    "defaultCommand": "команда",
+    "takenOver": {
+      "message": "Сеанс открыт на другом устройстве. Агент по-прежнему работает там.",
+      "reattach": "Переподключиться здесь",
+      "note": "Вывод с момента перемещения сеанса не будет воспроизведён."
+    }
   },
   "claudeStatus": {
     "actions": {

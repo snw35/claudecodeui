@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NavigateFunction } from 'react-router-dom';
 
 import { api } from '../utils/api';
+import { HIDE_CHAT_TAB } from '../constants/config';
 import type {
   AppSocketMessage,
   AppTab,
@@ -226,13 +227,13 @@ const isValidTab = (tab: string): tab is AppTab => {
 const readPersistedTab = (): AppTab => {
   try {
     const stored = localStorage.getItem('activeTab');
-    if (stored && isValidTab(stored)) {
+    if (stored && isValidTab(stored) && (!HIDE_CHAT_TAB || stored !== 'chat')) {
       return stored as AppTab;
     }
   } catch {
     // localStorage unavailable
   }
-  return 'chat';
+  return HIDE_CHAT_TAB ? 'shell' : 'chat';
 };
 
 export function useProjectsState({
@@ -620,7 +621,7 @@ export function useProjectsState({
       setSelectedSession(session);
 
       if (activeTab === 'tasks' || activeTab === 'preview') {
-        setActiveTab('chat');
+        setActiveTab(HIDE_CHAT_TAB ? 'shell' : 'chat');
       }
 
       const provider = localStorage.getItem('selected-provider') || 'claude';
@@ -647,7 +648,7 @@ export function useProjectsState({
     (project: Project) => {
       setSelectedProject(project);
       setSelectedSession(null);
-      setActiveTab('chat');
+      setActiveTab(HIDE_CHAT_TAB ? 'shell' : 'chat');
       setNewSessionTrigger((previous) => previous + 1);
       navigate('/');
 

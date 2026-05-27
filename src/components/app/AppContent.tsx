@@ -10,6 +10,7 @@ import { PaletteOpsProvider, usePaletteOpsRegister } from '../../contexts/Palett
 import { useDeviceSettings } from '../../hooks/useDeviceSettings';
 import { useSessionProtection } from '../../hooks/useSessionProtection';
 import { useProjectsState } from '../../hooks/useProjectsState';
+import { HIDE_CHAT_TAB } from '../../constants/config';
 
 export default function AppContent() {
   return (
@@ -80,7 +81,7 @@ function AppContentInner() {
         localStorage.setItem('selected-provider', message.provider);
       }
 
-      setActiveTab('chat');
+      setActiveTab(HIDE_CHAT_TAB ? 'shell' : 'chat');
       setSidebarOpen(false);
       void refreshProjectsSilently();
 

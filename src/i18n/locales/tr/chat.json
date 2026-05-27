@@ -237,7 +237,12 @@
     "resumeSession": "Oturuma devam et: {{displayName}}...",
     "runCommand": "{{projectName}} içinde {{command}} çalıştır",
     "startCli": "{{projectName}} içinde Claude CLI başlatılıyor",
-    "defaultCommand": "komut"
+    "defaultCommand": "komut",
+    "takenOver": {
+      "message": "Oturum başka bir cihazda açıldı. Ajan orada çalışmaya devam ediyor.",
+      "reattach": "Buraya yeniden bağlan",
+      "note": "Oturum taşındıktan sonraki çıktılar yeniden oynatılmayacak."
+    }
   },
   "claudeStatus": {
     "actions": {

@@ -34,6 +34,7 @@ export type ShellIncomingMessage =
   | { type: 'output'; data: string }
   | { type: 'auth_url'; url?: string }
   | { type: 'url_open'; url?: string }
+  | { type: 'session_taken_over' }
   | { type: string; [key: string]: unknown };
 
 export type UseShellRuntimeOptions = {
@@ -67,10 +68,12 @@ export type UseShellRuntimeResult = {
   isConnected: boolean;
   isInitialized: boolean;
   isConnecting: boolean;
+  wasTakenOver: boolean;
   authUrl: string;
   authUrlVersion: number;
   connectToShell: () => void;
   disconnectFromShell: () => void;
+  reattach: () => void;
   openAuthUrlInBrowser: (url?: string) => boolean;
   copyAuthUrlToClipboard: (url?: string) => Promise<boolean>;
 };

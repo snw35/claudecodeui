@@ -5,6 +5,12 @@
 export const IS_PLATFORM = import.meta.env.VITE_IS_PLATFORM === 'true';
 
 /**
+ * Environment Flag: Hide Chat Tab
+ * When true, the Chat tab is hidden from the UI and all fallback routing uses shell instead.
+ */
+export const HIDE_CHAT_TAB = import.meta.env.VITE_HIDE_CHAT_TAB === 'true';
+
+/**
  * For empty shell instances where no project is provided,
  * we use a default project object to ensure the shell can still function.
  * This prevents errors related to missing project data.

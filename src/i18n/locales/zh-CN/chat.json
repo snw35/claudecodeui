@@ -219,7 +219,12 @@
     "resumeSession": "恢复会话：{{displayName}}...",
     "runCommand": "在 {{projectName}} 中运行 {{command}}",
     "startCli": "在 {{projectName}} 中启动 Claude CLI",
-    "defaultCommand": "命令"
+    "defaultCommand": "命令",
+    "takenOver": {
+      "message": "会话已在另一台设备上打开，代理仍在那里运行。",
+      "reattach": "在此处重新连接",
+      "note": "会话迁移后的输出将不会重新播放。"
+    }
   },
   "claudeStatus": {
     "actions": {

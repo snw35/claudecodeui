@@ -13,6 +13,7 @@ import { useUiPreferences } from '../../../hooks/useUiPreferences';
 import { useEditorSidebar } from '../../code-editor/hooks/useEditorSidebar';
 import EditorSidebar from '../../code-editor/view/EditorSidebar';
 import type { Project } from '../../../types/app';
+import { HIDE_CHAT_TAB } from '../../../constants/config';
 import { TaskMasterPanel } from '../../task-master';
 
 import MainContentHeader from './subcomponents/MainContentHeader';
@@ -88,7 +89,7 @@ function MainContent({
 
   useEffect(() => {
     if (!shouldShowTasksTab && activeTab === 'tasks') {
-      setActiveTab('chat');
+      setActiveTab(HIDE_CHAT_TAB ? 'shell' : 'chat');
     }
   }, [shouldShowTasksTab, activeTab, setActiveTab]);
 

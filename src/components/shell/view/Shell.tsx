@@ -17,6 +17,7 @@ import ShellConnectionOverlay from './subcomponents/ShellConnectionOverlay';
 import ShellEmptyState from './subcomponents/ShellEmptyState';
 import ShellHeader from './subcomponents/ShellHeader';
 import ShellMinimalView from './subcomponents/ShellMinimalView';
+import ShellTakenOverOverlay from './subcomponents/ShellTakenOverOverlay';
 import TerminalShortcutsPanel from './subcomponents/TerminalShortcutsPanel';
 
 type CliPromptOption = { number: string; label: string };
@@ -55,10 +56,12 @@ export default function Shell({
     isConnected,
     isInitialized,
     isConnecting,
+    wasTakenOver,
     authUrl,
     authUrlVersion,
     connectToShell,
     disconnectFromShell,
+    reattach,
     openAuthUrlInBrowser,
     copyAuthUrlToClipboard,
   } = useShellRuntime({
@@ -269,11 +272,15 @@ export default function Shell({
       <div className="relative flex-1 overflow-hidden p-2">
         <div
           ref={terminalContainerRef}
-          className="h-full w-full focus:outline-none"
+          className={`h-full w-full focus:outline-none${wasTakenOver ? ' opacity-40 grayscale' : ''}`}
           style={{ outline: 'none' }}
         />
 
-        {overlayMode && (
+        {wasTakenOver && (
+          <ShellTakenOverOverlay onReattach={reattach} />
+        )}
+
+        {!wasTakenOver && overlayMode && (
           <ShellConnectionOverlay
             mode={overlayMode}
             description={overlayDescription}

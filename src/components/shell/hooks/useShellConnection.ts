@@ -31,9 +31,11 @@ type UseShellConnectionOptions = {
 type UseShellConnectionResult = {
   isConnected: boolean;
   isConnecting: boolean;
+  wasTakenOver: boolean;
   closeSocket: () => void;
   connectToShell: () => void;
   disconnectFromShell: () => void;
+  reattach: () => void;
 };
 
 export function useShellConnection({
@@ -55,7 +57,11 @@ export function useShellConnection({
 }: UseShellConnectionOptions): UseShellConnectionResult {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [wasTakenOver, setWasTakenOver] = useState(false);
   const connectingRef = useRef(false);
+  // Ref mirrors wasTakenOver for synchronous reads inside close handler
+  // (state updates are async; the close handler fires immediately after the message).
+  const wasTakenOverRef = useRef(false);
 
   const handleProcessCompletion = useCallback(
     (output: string) => {
@@ -104,6 +110,12 @@ export function useShellConnection({
         if (nextAuthUrl) {
           setAuthUrl(nextAuthUrl);
         }
+        return;
+      }
+
+      if (message.type === 'session_taken_over') {
+        wasTakenOverRef.current = true;
+        setWasTakenOver(true);
       }
     },
     [handleProcessCompletion, onOutputRef, setAuthUrl, terminalRef],
@@ -133,6 +145,8 @@ export function useShellConnection({
           setIsConnecting(false);
           connectingRef.current = false;
           setAuthUrl('');
+          wasTakenOverRef.current = false;
+          setWasTakenOver(false);
 
           window.setTimeout(() => {
             const currentTerminal = terminalRef.current;
@@ -184,7 +198,10 @@ export function useShellConnection({
           setIsConnected(false);
           setIsConnecting(false);
           connectingRef.current = false;
-          clearTerminalScreen();
+          // Preserve the terminal snapshot when kicked by another device.
+          if (!wasTakenOverRef.current) {
+            clearTerminalScreen();
+          }
         };
 
         socket.onerror = () => {
@@ -218,7 +235,9 @@ export function useShellConnection({
   );
 
   const connectToShell = useCallback(() => {
-    if (!isInitialized || isConnected || isConnecting || connectingRef.current) {
+    // Check ref synchronously — wasTakenOver state may not yet be true if the
+    // message and close events land in separate React render cycles.
+    if (!isInitialized || isConnected || isConnecting || connectingRef.current || wasTakenOverRef.current) {
       return;
     }
 
@@ -234,21 +253,32 @@ export function useShellConnection({
     setIsConnecting(false);
     connectingRef.current = false;
     setAuthUrl('');
+    wasTakenOverRef.current = false;
+    setWasTakenOver(false);
   }, [clearTerminalScreen, closeSocket, setAuthUrl]);
 
   useEffect(() => {
-    if (!autoConnect || !isInitialized || isConnecting || isConnected) {
+    if (!autoConnect || !isInitialized || isConnecting || isConnected || wasTakenOver) {
       return;
     }
 
     connectToShell();
-  }, [autoConnect, connectToShell, isConnected, isConnecting, isInitialized]);
+  }, [autoConnect, connectToShell, isConnected, isConnecting, isInitialized, wasTakenOver]);
+
+  const reattach = useCallback(() => {
+    wasTakenOverRef.current = false;
+    setWasTakenOver(false);
+    clearTerminalScreen();
+    connectToShell();
+  }, [clearTerminalScreen, connectToShell]);
 
   return {
     isConnected,
     isConnecting,
+    wasTakenOver,
     closeSocket,
     connectToShell,
     disconnectFromShell,
+    reattach,
   };
 }

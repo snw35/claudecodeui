@@ -237,7 +237,12 @@
     "resumeSession": "Riprendi sessione: {{displayName}}...",
     "runCommand": "Esegui {{command}} in {{projectName}}",
     "startCli": "Avvio Claude CLI in {{projectName}}",
-    "defaultCommand": "comando"
+    "defaultCommand": "comando",
+    "takenOver": {
+      "message": "Sessione aperta su un altro dispositivo. L'agente è ancora in esecuzione lì.",
+      "reattach": "Riconnetti qui",
+      "note": "L'output dall'inizio del trasferimento della sessione non verrà riprodotto."
+    }
   },
   "claudeStatus": {
     "actions": {

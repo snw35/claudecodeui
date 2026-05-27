@@ -237,7 +237,12 @@
     "resumeSession": "Sitzung fortsetzen: {{displayName}}...",
     "runCommand": "{{command}} in {{projectName}} ausführen",
     "startCli": "Claude CLI wird in {{projectName}} gestartet",
-    "defaultCommand": "Befehl"
+    "defaultCommand": "Befehl",
+    "takenOver": {
+      "message": "Sitzung auf einem anderen Gerät geöffnet. Der Agent läuft dort noch.",
+      "reattach": "Hier erneut verbinden",
+      "note": "Ausgaben seit dem Wechsel der Sitzung werden nicht erneut abgespielt."
+    }
   },
   "claudeStatus": {
     "actions": {

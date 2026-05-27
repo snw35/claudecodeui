@@ -326,17 +326,26 @@ export function handleShellConnection(
             existingSession.timeoutId = null;
           }
 
-          // The previous ws (if any) is being abandoned — the new connection
-          // takes over this PTY slot. Close the old socket so the frontend's
-          // close-handler runs and doesn't keep a half-dead connection alive.
+          // The previous ws (if any) is being taken over — notify it so the
+          // kicked client can suppress auto-reconnect and show the banner.
           const previousWs = existingSession.ws;
           if (previousWs && previousWs !== ws && previousWs.readyState === WebSocket.OPEN) {
+            try {
+              previousWs.send(JSON.stringify({ type: 'session_taken_over' }));
+            } catch {
+              // best effort
+            }
             try {
               previousWs.close();
             } catch {
               // best effort
             }
           }
+
+          // Resize before replay so live output uses the new client's dimensions, not the previous client's.
+          const reattachCols = readNumber(data.cols, 80);
+          const reattachRows = readNumber(data.rows, 24);
+          existingSession.pty.resize(reattachCols, reattachRows);
 
           ws.send(
             JSON.stringify({
