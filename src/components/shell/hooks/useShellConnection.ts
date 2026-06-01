@@ -6,6 +6,16 @@ import type { Project, ProjectSession } from '../../../types/app';
 import { TERMINAL_INIT_DELAY_MS } from '../constants/constants';
 import { getShellWebSocketUrl, parseShellMessage, sendSocketMessage } from '../utils/socket';
 
+// How long to wait for a WS open before giving up and letting onclose reset state.
+// Mobile browsers (especially iOS Safari) can silently kill a socket and delay
+// onclose by 60s+; this timeout ensures the connecting state never spins indefinitely.
+const WS_OPEN_TIMEOUT_MS = 15_000;
+
+// After this many ms of isConnecting, a tab-visible event will force a clean retry.
+// Shorter than WS_OPEN_TIMEOUT_MS so that the visibilitychange path fires first on
+// iOS when the tab is brought back to the foreground while a stale connect is pending.
+const VISIBILITY_RECONNECT_THRESHOLD_MS = 5_000;
+
 const ANSI_ESCAPE_REGEX =
   /(?:\u001B\[[0-?]*[ -/]*[@-~]|\u009B[0-?]*[ -/]*[@-~]|\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)|\u009D[^\u0007\u009C]*(?:\u0007|\u009C)|\u001B[PX^_][^\u001B]*\u001B\\|[\u0090\u0098\u009E\u009F][^\u009C]*\u009C|\u001B[@-Z\\-_])/g;
 const PROCESS_EXIT_REGEX = /Process exited with code (\d+)/;
@@ -62,6 +72,9 @@ export function useShellConnection({
   // Ref mirrors wasTakenOver for synchronous reads inside close handler
   // (state updates are async; the close handler fires immediately after the message).
   const wasTakenOverRef = useRef(false);
+  // Timestamp (Date.now()) when the most recent connectToShell call started.
+  // Read by the visibilitychange handler to decide if a pending connect is stale.
+  const connectStartTimeRef = useRef<number | null>(null);
 
   const handleProcessCompletion = useCallback(
     (output: string) => {
@@ -140,10 +153,27 @@ export function useShellConnection({
         const socket = new WebSocket(wsUrl);
         wsRef.current = socket;
 
+        // Guard against mobile browsers that silently kill the socket and delay
+        // onclose by 60s+. If the socket has not opened after WS_OPEN_TIMEOUT_MS,
+        // force-close it so onclose fires, resets isConnecting, and autoConnect
+        // retriggers a fresh attempt.
+        const openTimeoutId = window.setTimeout(() => {
+          if (wsRef.current !== socket) {
+            return; // already superseded
+          }
+          try {
+            socket.close();
+          } catch {
+            // ignore
+          }
+        }, WS_OPEN_TIMEOUT_MS);
+
         socket.onopen = () => {
+          window.clearTimeout(openTimeoutId);
           setIsConnected(true);
           setIsConnecting(false);
           connectingRef.current = false;
+          connectStartTimeRef.current = null;
           setAuthUrl('');
           wasTakenOverRef.current = false;
           setWasTakenOver(false);
@@ -186,6 +216,7 @@ export function useShellConnection({
         };
 
         socket.onclose = () => {
+          window.clearTimeout(openTimeoutId);
           // Only the *current* socket may reset connection state. A stale
           // socket firing onclose after it's been superseded (e.g. server
           // closed it because a newer ws took over the PTY entry) would
@@ -198,6 +229,7 @@ export function useShellConnection({
           setIsConnected(false);
           setIsConnecting(false);
           connectingRef.current = false;
+          connectStartTimeRef.current = null;
           // Preserve the terminal snapshot when kicked by another device.
           if (!wasTakenOverRef.current) {
             clearTerminalScreen();
@@ -205,12 +237,14 @@ export function useShellConnection({
         };
 
         socket.onerror = () => {
+          window.clearTimeout(openTimeoutId);
           if (wsRef.current !== socket) {
             return;
           }
           setIsConnected(false);
           setIsConnecting(false);
           connectingRef.current = false;
+          connectStartTimeRef.current = null;
         };
       } catch {
         setIsConnected(false);
@@ -242,6 +276,7 @@ export function useShellConnection({
     }
 
     connectingRef.current = true;
+    connectStartTimeRef.current = Date.now();
     setIsConnecting(true);
     connectWebSocket(true);
   }, [connectWebSocket, isConnected, isConnecting, isInitialized]);
@@ -252,6 +287,7 @@ export function useShellConnection({
     setIsConnected(false);
     setIsConnecting(false);
     connectingRef.current = false;
+    connectStartTimeRef.current = null;
     setAuthUrl('');
     wasTakenOverRef.current = false;
     setWasTakenOver(false);
@@ -264,6 +300,37 @@ export function useShellConnection({
 
     connectToShell();
   }, [autoConnect, connectToShell, isConnected, isConnecting, isInitialized, wasTakenOver]);
+
+  // iOS Safari can deliver onclose 60s+ after the socket dies. If the tab is
+  // backgrounded while a connect is in flight, onclose/onerror may not arrive
+  // until the tab returns to the foreground — by which time the open timeout
+  // may still be pending. The visibilitychange handler catches the complementary
+  // case: the tab becomes visible with a stale pending connect (no open timeout
+  // fired yet, e.g. the user backgrounds and foregrounds within 15s). Force a
+  // clean disconnect + reconnect in that scenario so the overlay doesn't spin.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+
+      const startTime = connectStartTimeRef.current;
+      if (
+        startTime !== null &&
+        connectingRef.current &&
+        !isConnected &&
+        Date.now() - startTime > VISIBILITY_RECONNECT_THRESHOLD_MS
+      ) {
+        disconnectFromShell();
+        connectToShell();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [connectToShell, disconnectFromShell, isConnected]);
 
   const reattach = useCallback(() => {
     wasTakenOverRef.current = false;

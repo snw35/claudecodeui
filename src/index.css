@@ -617,6 +617,17 @@
       user-select: text !important;
       -webkit-touch-callout: default !important;
     }
+
+    /* S1: suppress xterm's composition-view overlay.  xterm uses this element to
+     * render a greyed duplicate of the still-composing text on top of the cursor.
+     * We drive the PTY ourselves from composition events and the PTY echo is the
+     * real-time feedback, so the overlay is redundant and causes "hellohello" doubling.
+     * CJK note: this also hides the CJK candidate preview — an accepted trade-off
+     * for this fork.  Remove this rule to restore the overlay.
+     * Scope is .xterm so it cannot bleed outside the terminal widget. */
+    .xterm .composition-view.active {
+      display: none !important;
+    }
     
     /* Fix mobile scrolling */
     .overflow-y-auto {

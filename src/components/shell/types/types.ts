@@ -28,7 +28,14 @@ export type ShellInputMessage = {
   data: string;
 };
 
-export type ShellOutgoingMessage = ShellInitMessage | ShellResizeMessage | ShellInputMessage;
+// DIAG S1 TRACE — remove after capture
+export type ShellDiagInputTraceMessage = {
+  type: 'diag_input_trace';
+  event: string;
+  detail: Record<string, unknown>;
+};
+
+export type ShellOutgoingMessage = ShellInitMessage | ShellResizeMessage | ShellInputMessage | ShellDiagInputTraceMessage;
 
 export type ShellIncomingMessage =
   | { type: 'output'; data: string }

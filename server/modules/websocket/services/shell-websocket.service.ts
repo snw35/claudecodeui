@@ -20,6 +20,9 @@ type ShellIncomingMessage = {
   provider?: string;
   initialCommand?: string;
   isPlainShell?: boolean;
+  // DIAG S1 TRACE — remove after capture
+  event?: string;
+  detail?: unknown;
 };
 
 type PtySessionEntry = {
@@ -562,8 +565,20 @@ export function handleShellConnection(
         return;
       }
 
+      // DIAG S1 TRACE — remove after capture
+      if (data.type === 'diag_input_trace') {
+        console.log(`[DIAG S1 trace] ${data.event}: ${JSON.stringify(data.detail)}`);
+        return;
+      }
+      // END DIAG S1 TRACE
+
       if (data.type === 'input') {
         if (shellProcess) {
+          // DIAG S1 — remove after mobile test
+          const _diagData = readString(data.data);
+          const _x7fCount = (_diagData.match(/\x7f/g) || []).length;
+          const _diagHex = Buffer.from(_diagData).toString('hex').slice(0, 40);
+          console.log(`[DIAG S1] input: len=${_diagData.length} x7f=${_x7fCount} hex=${_diagHex} json=${JSON.stringify(_diagData).slice(0, 60)}`);
           shellProcess.write(readString(data.data));
         }
         return;
